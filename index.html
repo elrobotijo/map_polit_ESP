@@ -1,0 +1,1348 @@
+<!DOCTYPE html>
+<html lang="es" class="h-full bg-slate-900 text-slate-100">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mapa Político de España - EBAU</title>
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Outfit:wght@500;600;700;800;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        display: ['Outfit', 'sans-serif']
+                    },
+                    colors: {
+                        spain: {
+                            red: '#AA151B',
+                            yellow: '#F1BF00',
+                        },
+                        brand: {
+                            dark: '#0f172a',
+                            panel: '#1e293b',
+                            accent: '#38bdf8'
+                        }
+                    },
+                    animation: {
+                        'float': 'float 6s ease-in-out infinite',
+                        'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+                    },
+                    keyframes: {
+                        float: {
+                            '0%, 100%': { transform: 'translateY(0)' },
+                            '50%': { transform: 'translateY(-10px)' },
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        body {
+            background-image: radial-gradient(circle at 50% 0%, #1e293b 0%, #0f172a 100%);
+            background-attachment: fixed;
+        }
+
+        .screen {
+            display: none;
+            opacity: 0;
+            transition: opacity 0.4s ease-in-out;
+        }
+        .screen.active {
+            display: flex;
+            opacity: 1;
+        }
+
+        /* Map Styles - Corregido para evitar "zonas negras" */
+        .map-province {
+            transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+            cursor: pointer;
+            stroke: rgba(255, 255, 255, 0.15); /* Bordes más sutiles en vez del #0f172a negro */
+            stroke-width: 1; 
+            stroke-linejoin: round;
+        }
+        
+        .map-province:hover {
+            fill: #fbbf24 !important;
+            filter: drop-shadow(0px 0px 10px rgba(251, 191, 36, 0.5));
+            stroke: #ffffff;
+            stroke-width: 2;
+            transform: scale(1.01);
+            transform-origin: center;
+        }
+
+        .map-province.active {
+            fill: #38bdf8 !important;
+            stroke: #ffffff;
+            stroke-width: 2.5;
+            filter: drop-shadow(0px 0px 12px rgba(56, 189, 248, 0.6));
+        }
+
+        .map-province.correct {
+            fill: #22c55e !important;
+            stroke: #ffffff;
+            stroke-width: 2.5;
+            animation: pop 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+
+        .map-province.wrong {
+            fill: #ef4444 !important;
+            animation: shake 0.4s ease;
+        }
+
+        @keyframes pop {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+            100% { transform: scale(1); }
+        }
+
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            20%, 60% { transform: translateX(-5px); }
+            40%, 80% { transform: translateX(5px); }
+        }
+
+        /* Glassmorphism */
+        .glass {
+            background: rgba(30, 41, 59, 0.6);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            box-shadow: 0 4px 30px rgba(0, 0, 0, 0.3);
+        }
+
+        .menu-card {
+            transition: all 0.3s ease;
+        }
+        .menu-card:hover {
+            transform: translateY(-5px);
+            background: rgba(30, 41, 59, 0.9);
+            border-color: rgba(255, 255, 255, 0.15);
+        }
+
+        /* Flashcards */
+        .flashcard-inner {
+            transition: transform 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+            transform-style: preserve-3d;
+        }
+        .flashcard.flipped .flashcard-inner {
+            transform: rotateY(180deg);
+        }
+        .flashcard-front, .flashcard-back {
+            backface-visibility: hidden;
+            -webkit-backface-visibility: hidden;
+        }
+        .flashcard-back {
+            transform: rotateY(180deg);
+        }
+
+        /* Custom scrollbar */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: rgba(15, 23, 42, 0.8); }
+        ::-webkit-scrollbar-thumb { background: rgba(71, 85, 105, 0.6); border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: rgba(148, 163, 184, 0.8); }
+        
+        .floating-label {
+            pointer-events: none;
+            font-size: 10px;
+            font-weight: bold;
+            fill: rgba(255,255,255,0.7);
+            text-anchor: middle;
+            transition: opacity 0.2s;
+        }
+        .map-wrapper:hover .floating-label {
+            opacity: 0.3;
+        }
+    </style>
+</head>
+<body class="h-full flex flex-col font-sans overflow-x-hidden selection:bg-amber-400 selection:text-slate-900">
+
+    <header class="fixed top-0 w-full z-50 glass border-b border-slate-800/50 px-6 py-4">
+        <div class="max-w-7xl mx-auto flex justify-between items-center">
+            <div class="flex items-center gap-3 cursor-pointer" onclick="showScreen('menu')">
+                <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-spain-red via-spain-yellow to-spain-red flex items-center justify-center text-slate-900 font-black text-xl shadow-lg">
+                    ES
+                </div>
+                <div>
+                    <h1 class="font-display font-bold text-xl text-white tracking-tight leading-none">
+                        Geografía EBAU
+                    </h1>
+                    <span class="text-[10px] uppercase tracking-widest text-slate-400 font-semibold">Organización Territorial</span>
+                </div>
+            </div>
+
+            <div class="flex items-center gap-4">
+                <div class="hidden sm:flex items-center gap-4 mr-4">
+                    <div class="flex flex-col items-end">
+                        <span class="text-[10px] uppercase text-slate-400 font-bold">Puntuación</span>
+                        <span id="global-score" class="text-lg font-mono font-bold text-amber-400 leading-none">0</span>
+                    </div>
+                    <div class="h-6 w-px bg-slate-700"></div>
+                    <div class="flex flex-col items-end">
+                        <span class="text-[10px] uppercase text-slate-400 font-bold">Racha</span>
+                        <span id="global-streak" class="text-lg font-mono font-bold text-rose-400 leading-none">0</span>
+                    </div>
+                </div>
+                <button onclick="showScreen('menu')" id="btn-home" class="hidden p-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg transition" title="Volver al Menú">
+                    <i class="fa-solid fa-house"></i>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <main class="flex-1 w-full mt-20 relative">
+        
+        <!-- SCREEN: MENU -->
+        <section id="screen-menu" class="screen active flex-col items-center justify-center min-h-[calc(100vh-5rem)] p-6">
+            <div class="text-center mb-12 max-w-2xl animate-float">
+                <span class="inline-block py-1 px-3 rounded-full bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 text-xs font-bold tracking-widest mb-4">
+                    2º BACHILLERATO
+                </span>
+                <h2 class="text-5xl md:text-6xl font-display font-black text-white mb-4 tracking-tight">
+                    El Mapa de <span class="text-transparent bg-clip-text bg-gradient-to-r from-spain-red via-spain-yellow to-spain-red">España</span>
+                </h2>
+                <p class="text-slate-400 text-lg">
+                    Domina las Comunidades Autónomas, Provincias, Capitales y Archipiélagos. Prepárate para la prueba de Geografía.
+                </p>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 max-w-6xl w-full">
+                <!-- Menu Item 1 -->
+                <button onclick="showScreen('explorer')" class="menu-card glass p-6 rounded-2xl flex flex-col items-start text-left group">
+                    <div class="w-12 h-12 rounded-xl bg-blue-500/20 text-blue-400 flex items-center justify-center text-2xl mb-4 group-hover:scale-110 transition-transform">
+                        <i class="fa-solid fa-map"></i>
+                    </div>
+                    <h3 class="text-xl font-display font-bold text-white mb-2">Explorador Interactivo</h3>
+                    <p class="text-sm text-slate-400">Navega libremente por el mapa. Consulta datos de cada provincia, CCAA y capitales al instante.</p>
+                </button>
+
+                <!-- Menu Item 2 -->
+                <button onclick="showScreen('map-quiz'); startMapQuiz();" class="menu-card glass p-6 rounded-2xl flex flex-col items-start text-left group">
+                    <div class="w-12 h-12 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center text-2xl mb-4 group-hover:scale-110 transition-transform">
+                        <i class="fa-solid fa-location-dot"></i>
+                    </div>
+                    <h3 class="text-xl font-display font-bold text-white mb-2">Reto: Localizador</h3>
+                    <p class="text-sm text-slate-400">Demuestra tu puntería. Encuentra la provincia o comunidad que se te pide directamente en el mapa.</p>
+                </button>
+
+                <!-- Menu Item 3 -->
+                <button onclick="showScreen('match-quiz')" class="menu-card glass p-6 rounded-2xl flex flex-col items-start text-left group">
+                    <div class="w-12 h-12 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-2xl mb-4 group-hover:scale-110 transition-transform">
+                        <i class="fa-solid fa-city"></i>
+                    </div>
+                    <h3 class="text-xl font-display font-bold text-white mb-2">Capitales y Provincias</h3>
+                    <p class="text-sm text-slate-400">Test rápido para relacionar provincias con su CCAA y acertar las capitales autonómicas y provinciales.</p>
+                </button>
+
+                <!-- Menu Item 4 -->
+                <button onclick="showScreen('islands')" class="menu-card glass p-6 rounded-2xl flex flex-col items-start text-left group">
+                    <div class="w-12 h-12 rounded-xl bg-cyan-500/20 text-cyan-400 flex items-center justify-center text-2xl mb-4 group-hover:scale-110 transition-transform">
+                        <i class="fa-solid fa-water"></i>
+                    </div>
+                    <h3 class="text-xl font-display font-bold text-white mb-2">Especial Archipiélagos</h3>
+                    <p class="text-sm text-slate-400">Conoce a fondo Canarias y Baleares. Provincias, islas principales (Gimnesias, Pitiusas) y capitales.</p>
+                </button>
+
+                <!-- Menu Item 5 -->
+                <button onclick="showScreen('ebau-test')" class="menu-card glass p-6 rounded-2xl flex flex-col items-start text-left group">
+                    <div class="w-12 h-12 rounded-xl bg-indigo-500/20 text-indigo-400 flex items-center justify-center text-2xl mb-4 group-hover:scale-110 transition-transform">
+                        <i class="fa-solid fa-graduation-cap"></i>
+                    </div>
+                    <h3 class="text-xl font-display font-bold text-white mb-2">Test EBAU</h3>
+                    <p class="text-sm text-slate-400">Preguntas teóricas tipo test basadas en exámenes reales sobre organización territorial y estatutos.</p>
+                </button>
+
+                <!-- Menu Item 6 -->
+                <button onclick="showScreen('flashcards')" class="menu-card glass p-6 rounded-2xl flex flex-col items-start text-left group lg:col-span-1 md:col-span-2">
+                    <div class="w-12 h-12 rounded-xl bg-rose-500/20 text-rose-400 flex items-center justify-center text-2xl mb-4 group-hover:scale-110 transition-transform">
+                        <i class="fa-solid fa-clone"></i>
+                    </div>
+                    <h3 class="text-xl font-display font-bold text-white mb-2">Fichas de Estudio (Flashcards)</h3>
+                    <p class="text-sm text-slate-400">Repasa visualmente toda la información clave de cada comunidad autónoma de forma secuencial o aleatoria.</p>
+                </button>
+            </div>
+        </section>
+
+        <!-- SCREEN: EXPLORER -->
+        <section id="screen-explorer" class="screen flex-col h-[calc(100vh-5rem)] p-4 max-w-[1600px] mx-auto">
+            <div class="flex items-center gap-3 mb-4 shrink-0">
+                <i class="fa-solid fa-map text-blue-400 text-xl"></i>
+                <h2 class="text-2xl font-display font-bold text-white">Explorador Interactivo</h2>
+                <div class="ml-auto">
+                    <select id="ccaa-filter" onchange="filterMapByCCAA(this.value)" class="glass text-sm text-slate-200 border-none rounded-xl px-4 py-2 outline-none focus:ring-2 focus:ring-blue-400 cursor-pointer">
+                        <option value="ALL">Mostrar Toda España</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-6 min-h-0">
+                <!-- Map Area -->
+                <div class="lg:col-span-8 glass rounded-2xl flex flex-col relative overflow-hidden h-full">
+                    <div class="flex-1 w-full h-full p-4 relative" id="explorer-map-container">
+                        <!-- SVG Map injected here -->
+                    </div>
+                    
+                    <!-- Floating Map Tooltip -->
+                    <div id="explorer-tooltip" class="absolute pointer-events-none opacity-0 transition-opacity duration-200 bg-slate-900/95 text-white p-3 rounded-xl border border-slate-700 shadow-2xl z-30 flex flex-col gap-1 transform -translate-x-1/2 -translate-y-[120%]">
+                        <span id="tooltip-prov" class="font-bold text-base text-amber-400 leading-none"></span>
+                        <span id="tooltip-ccaa" class="text-xs font-semibold text-slate-300"></span>
+                        <div class="w-3 h-3 bg-slate-900 border-b border-r border-slate-700 absolute -bottom-1.5 left-1/2 transform -translate-x-1/2 rotate-45"></div>
+                    </div>
+                </div>
+
+                <!-- Info Panel -->
+                <div class="lg:col-span-4 glass rounded-2xl p-6 flex flex-col h-full overflow-y-auto">
+                    <div id="explorer-info-placeholder" class="h-full flex flex-col items-center justify-center text-center text-slate-500">
+                        <i class="fa-solid fa-hand-pointer text-4xl mb-4 opacity-50 animate-bounce"></i>
+                        <p class="text-lg font-medium">Selecciona una provincia o CCAA en el mapa para ver sus detalles.</p>
+                    </div>
+
+                    <div id="explorer-info-content" class="hidden flex-col h-full">
+                        <div class="mb-6">
+                            <span id="info-badge" class="inline-block px-2.5 py-1 text-xs font-bold rounded-lg bg-blue-500/20 text-blue-400 mb-3">
+                                Comunidad Autónoma
+                            </span>
+                            <h3 id="info-title" class="text-4xl font-display font-black text-white mb-2 leading-none"></h3>
+                            <p class="text-slate-400 flex items-center gap-2 text-sm mt-3 bg-slate-800/50 p-2 rounded-lg inline-flex">
+                                <i class="fa-solid fa-crown text-amber-400"></i> Capital: <strong id="info-capital" class="text-slate-100"></strong>
+                            </p>
+                        </div>
+
+                        <div class="space-y-4 flex-1">
+                            <div class="bg-slate-900/50 p-4 rounded-xl border border-slate-700/50">
+                                <div class="flex justify-between items-center mb-3">
+                                    <h4 class="text-sm font-bold text-slate-300 flex items-center gap-2">
+                                        <i class="fa-solid fa-layer-group text-emerald-400"></i> Provincias (<span id="info-prov-count"></span>)
+                                    </h4>
+                                </div>
+                                <div id="info-provinces" class="flex flex-wrap gap-2">
+                                    <!-- Tags -->
+                                </div>
+                            </div>
+
+                            <div class="bg-slate-900/50 p-4 rounded-xl border border-slate-700/50">
+                                <h4 class="text-sm font-bold text-slate-300 flex items-center gap-2 mb-2">
+                                    <i class="fa-solid fa-book text-indigo-400"></i> Apunte EBAU
+                                </h4>
+                                <p id="info-ebau" class="text-sm text-slate-400 leading-relaxed"></p>
+                            </div>
+                        </div>
+
+                        <button onclick="showScreen('map-quiz'); mapQuizCurrentTarget = {prov: lastSelectedProv, ccaa: lastSelectedCCAA}; startMapQuizWithTarget();" class="mt-6 w-full py-3 bg-blue-500 hover:bg-blue-600 text-white font-bold rounded-xl transition shadow-lg flex items-center justify-center gap-2">
+                            Ponte a prueba con esta CCAA <i class="fa-solid fa-arrow-right"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- SCREEN: MAP QUIZ -->
+        <section id="screen-map-quiz" class="screen flex-col h-[calc(100vh-5rem)] p-4 max-w-[1600px] mx-auto">
+            <div class="flex items-center gap-3 mb-4 shrink-0">
+                <i class="fa-solid fa-location-dot text-amber-400 text-xl"></i>
+                <h2 class="text-2xl font-display font-bold text-white">Reto: Localizador</h2>
+                <div class="ml-auto glass px-4 py-1.5 rounded-full border-amber-500/30 border flex items-center gap-2">
+                    <span class="text-xs text-slate-400 uppercase font-bold">Ronda</span>
+                    <span id="quiz-progress-text" class="font-mono text-amber-400 font-bold">1/10</span>
+                </div>
+            </div>
+
+            <div class="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-6 min-h-0">
+                <!-- Map Area -->
+                <div class="lg:col-span-8 glass rounded-2xl flex flex-col relative overflow-hidden h-full">
+                    <div class="absolute top-4 left-4 right-4 z-10 pointer-events-none flex justify-center">
+                        <div class="glass bg-slate-900/90 px-6 py-4 rounded-2xl border-amber-500/50 shadow-2xl text-center backdrop-blur-md">
+                            <span class="text-xs text-slate-400 uppercase tracking-widest font-bold block mb-1">Encuentra y haz clic en:</span>
+                            <h3 id="quiz-target-name" class="text-3xl font-display font-black text-white">Provincia</h3>
+                            <p id="quiz-hint" class="text-sm text-amber-400 mt-2 font-medium opacity-0 transition-opacity">Pista aquí</p>
+                        </div>
+                    </div>
+
+                    <div class="flex-1 w-full h-full p-4 relative mt-20" id="quiz-map-container">
+                        <!-- SVG Map -->
+                    </div>
+                </div>
+
+                <!-- Controls & Feedback Area -->
+                <div class="lg:col-span-4 glass rounded-2xl p-6 flex flex-col h-full">
+                    <div class="flex-1 flex flex-col justify-center">
+                        
+                        <div id="quiz-feedback-box" class="hidden flex-col items-center text-center p-6 rounded-2xl mb-6">
+                            <div id="quiz-feedback-icon" class="w-16 h-16 rounded-full flex items-center justify-center text-3xl mb-4 text-white"></div>
+                            <h4 id="quiz-feedback-title" class="text-xl font-bold text-white mb-2"></h4>
+                            <p id="quiz-feedback-text" class="text-sm text-slate-300"></p>
+                        </div>
+
+                        <div class="space-y-3 w-full mt-auto">
+                            <button onclick="document.getElementById('quiz-hint').style.opacity = '1'" class="w-full py-3 glass hover:bg-slate-800 text-amber-400 font-semibold rounded-xl transition text-sm flex items-center justify-center gap-2">
+                                <i class="fa-regular fa-lightbulb"></i> Mostrar Pista
+                            </button>
+                            <button id="quiz-next-btn" onclick="nextMapQuiz()" class="w-full py-4 bg-amber-500 hover:bg-amber-600 text-slate-900 font-black rounded-xl transition shadow-lg text-lg hidden">
+                                Siguiente Provincia
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- SCREEN: MATCH QUIZ -->
+        <section id="screen-match-quiz" class="screen flex-col h-[calc(100vh-5rem)] p-4 max-w-5xl mx-auto">
+             <div class="flex items-center justify-center gap-3 mb-8 shrink-0">
+                <i class="fa-solid fa-city text-emerald-400 text-2xl"></i>
+                <h2 class="text-3xl font-display font-bold text-white">Test Rápido: Capitales y CCAA</h2>
+            </div>
+
+            <div class="flex-1 flex flex-col items-center justify-center">
+                <div class="glass w-full max-w-2xl p-8 rounded-3xl shadow-2xl relative overflow-hidden">
+                    <div class="absolute top-0 left-0 w-full h-1 bg-slate-800">
+                        <div id="match-progress-bar" class="h-full bg-emerald-500 w-0 transition-all duration-300"></div>
+                    </div>
+                    
+                    <div class="text-center mb-8">
+                        <span id="match-type-label" class="inline-block px-3 py-1 rounded-full bg-slate-800 text-emerald-400 text-xs font-bold uppercase tracking-widest mb-4"></span>
+                        <h3 id="match-question" class="text-3xl md:text-4xl font-display font-black text-white leading-tight"></h3>
+                    </div>
+
+                    <div id="match-options" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <!-- Options -->
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- SCREEN: ISLANDS -->
+        <section id="screen-islands" class="screen flex-col h-[calc(100vh-5rem)] p-4 max-w-5xl mx-auto">
+            <div class="flex items-center gap-3 mb-6 shrink-0">
+                <i class="fa-solid fa-water text-cyan-400 text-2xl"></i>
+                <h2 class="text-3xl font-display font-bold text-white">Especial Archipiélagos</h2>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+                <div class="glass p-6 rounded-2xl border-t-4 border-t-cyan-500">
+                    <h3 class="font-display font-bold text-xl text-white mb-4">Canarias</h3>
+                    <ul class="text-sm text-slate-300 space-y-3">
+                        <li class="flex gap-2"><i class="fa-solid fa-location-dot text-cyan-400 mt-1"></i> <div><strong>Provincia S.C. Tenerife:</strong> Tenerife, La Palma, La Gomera, El Hierro.</div></li>
+                        <li class="flex gap-2"><i class="fa-solid fa-location-dot text-cyan-400 mt-1"></i> <div><strong>Provincia Las Palmas:</strong> Gran Canaria, Fuerteventura, Lanzarote, La Graciosa.</div></li>
+                        <li class="flex gap-2"><i class="fa-solid fa-crown text-amber-400 mt-1"></i> <div><strong>Capital:</strong> Compartida (S.C. Tenerife y Las Palmas de G.C.)</div></li>
+                    </ul>
+                </div>
+                <div class="glass p-6 rounded-2xl border-t-4 border-t-amber-500">
+                    <h3 class="font-display font-bold text-xl text-white mb-4">Illes Balears</h3>
+                    <ul class="text-sm text-slate-300 space-y-3">
+                        <li class="flex gap-2"><i class="fa-solid fa-map text-amber-400 mt-1"></i> <div><strong>Gimnesias:</strong> Mallorca, Menorca, Cabrera.</div></li>
+                        <li class="flex gap-2"><i class="fa-solid fa-map text-amber-400 mt-1"></i> <div><strong>Pitiusas:</strong> Ibiza, Formentera.</div></li>
+                        <li class="flex gap-2"><i class="fa-solid fa-crown text-amber-400 mt-1"></i> <div><strong>Capital CCAA y Provincia:</strong> Palma.</div></li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="glass flex-1 rounded-3xl p-8 flex flex-col justify-center items-center text-center">
+                <h3 id="island-q-text" class="text-2xl md:text-3xl font-display font-bold text-white mb-8"></h3>
+                <div id="island-q-options" class="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full max-w-2xl">
+                    <!-- Options -->
+                </div>
+            </div>
+        </section>
+
+        <!-- SCREEN: EBAU TEST -->
+        <section id="screen-ebau-test" class="screen flex-col h-[calc(100vh-5rem)] p-4 max-w-4xl mx-auto">
+             <div class="flex items-center justify-between mb-8 shrink-0">
+                <div class="flex items-center gap-3">
+                    <i class="fa-solid fa-graduation-cap text-indigo-400 text-2xl"></i>
+                    <h2 class="text-3xl font-display font-bold text-white">Test Teórico EBAU</h2>
+                </div>
+                <span id="ebau-counter" class="glass px-4 py-1.5 rounded-full text-indigo-300 font-mono font-bold text-sm"></span>
+            </div>
+
+            <div class="glass flex-1 rounded-3xl p-6 md:p-10 flex flex-col">
+                <h3 id="ebau-q-text" class="text-xl md:text-2xl font-medium text-white leading-relaxed mb-8"></h3>
+                
+                <div id="ebau-options" class="space-y-3 mb-6">
+                    <!-- Options -->
+                </div>
+
+                <div id="ebau-explanation" class="hidden mt-auto p-5 rounded-2xl bg-indigo-900/30 border border-indigo-500/30">
+                    <h4 class="text-indigo-400 font-bold text-sm uppercase tracking-wider mb-2 flex items-center gap-2">
+                        <i class="fa-solid fa-circle-info"></i> Explicación
+                    </h4>
+                    <p id="ebau-exp-text" class="text-sm text-indigo-100/80 leading-relaxed"></p>
+                </div>
+
+                <button id="ebau-next-btn" onclick="nextEbauQ()" class="mt-6 w-full py-4 bg-indigo-500 hover:bg-indigo-600 text-white font-bold rounded-xl transition hidden">
+                    Siguiente Pregunta
+                </button>
+            </div>
+        </section>
+
+        <!-- SCREEN: FLASHCARDS -->
+        <section id="screen-flashcards" class="screen flex-col h-[calc(100vh-5rem)] p-4 max-w-3xl mx-auto items-center justify-center">
+            <div class="w-full flex justify-between items-center mb-6">
+                <div class="flex items-center gap-3">
+                    <i class="fa-solid fa-clone text-rose-400 text-xl"></i>
+                    <h2 class="text-2xl font-display font-bold text-white">Fichas de Repaso</h2>
+                </div>
+                <span id="fc-counter" class="text-slate-400 font-mono"></span>
+            </div>
+
+            <div class="w-full aspect-[4/3] md:aspect-video perspective-1000">
+                <div id="flashcard-element" onclick="this.classList.toggle('flipped')" class="flashcard w-full h-full cursor-pointer">
+                    <div class="flashcard-inner relative w-full h-full shadow-2xl rounded-3xl">
+                        
+                        <!-- Front -->
+                        <div class="flashcard-front absolute inset-0 glass rounded-3xl p-8 flex flex-col items-center justify-center text-center border-t-4 border-t-rose-500 bg-slate-900/80">
+                            <span class="text-xs text-slate-400 uppercase tracking-widest font-bold mb-4">Comunidad Autónoma</span>
+                            <h3 id="fc-front-title" class="text-5xl font-display font-black text-white"></h3>
+                            <div class="absolute bottom-6 text-slate-500 text-sm flex items-center gap-2 animate-pulse-slow">
+                                <i class="fa-solid fa-hand-pointer"></i> Haz clic para voltear
+                            </div>
+                        </div>
+
+                        <!-- Back -->
+                        <div class="flashcard-back absolute inset-0 glass rounded-3xl p-8 flex flex-col justify-center border-t-4 border-t-amber-500 bg-slate-800/90">
+                            <h3 id="fc-back-title" class="text-2xl font-display font-bold text-amber-400 border-b border-slate-700 pb-4 mb-4"></h3>
+                            
+                            <div class="space-y-4">
+                                <div>
+                                    <span class="text-xs text-slate-400 uppercase font-bold block mb-1">Capital Autonómica</span>
+                                    <p id="fc-back-capital" class="text-lg font-medium text-white"></p>
+                                </div>
+                                <div>
+                                    <span class="text-xs text-slate-400 uppercase font-bold block mb-1">Provincias</span>
+                                    <p id="fc-back-provs" class="text-sm text-slate-300"></p>
+                                </div>
+                                <div>
+                                    <span class="text-xs text-slate-400 uppercase font-bold block mb-1">Dato Clave EBAU</span>
+                                    <p id="fc-back-ebau" class="text-sm text-amber-200/90 italic bg-amber-900/20 p-3 rounded-lg"></p>
+                                </div>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+            </div>
+
+            <div class="flex gap-4 mt-8 w-full">
+                <button onclick="prevFc()" class="flex-1 glass py-4 rounded-2xl hover:bg-slate-800 transition font-bold text-slate-300">Anterior</button>
+                <button onclick="shuffleFc()" class="px-6 glass py-4 rounded-2xl hover:bg-slate-800 transition text-rose-400"><i class="fa-solid fa-shuffle"></i></button>
+                <button onclick="nextFc()" class="flex-1 bg-rose-500 hover:bg-rose-600 text-white py-4 rounded-2xl transition font-bold">Siguiente</button>
+            </div>
+        </section>
+
+    </main>
+
+    <script>
+        // Data Structure
+        const CCAA_DATA = [
+            { id: "AN", name: "Andalucía", capital: "Sevilla", ebauKey: "Vía rápida art. 151. CCAA más poblada. 8 provincias.", provinces: [{ id: "AL", name: "Almería", cap: "Almería" }, { id: "CA", name: "Cádiz", cap: "Cádiz" }, { id: "CO", name: "Córdoba", cap: "Córdoba" }, { id: "GR", name: "Granada", cap: "Granada" }, { id: "HU", name: "Huelva", cap: "Huelva" }, { id: "JA", name: "Jaén", cap: "Jaén" }, { id: "MA", name: "Málaga", cap: "Málaga" }, { id: "SE", name: "Sevilla", cap: "Sevilla" }] },
+            { id: "AR", name: "Aragón", capital: "Zaragoza", ebauKey: "Derecho Foral propio. Eje del Ebro.", provinces: [{ id: "HU_AR", name: "Huesca", cap: "Huesca" }, { id: "TE", name: "Teruel", cap: "Teruel" }, { id: "Z", name: "Zaragoza", cap: "Zaragoza" }] },
+            { id: "AS", name: "Principado de Asturias", capital: "Oviedo", ebauKey: "Uniprovincial. Oviedo institucional, Gijón industrial.", provinces: [{ id: "O", name: "Asturias", cap: "Oviedo" }] },
+            { id: "IB", name: "Islas Baleares", capital: "Palma", ebauKey: "Gimnesias y Pitiusas. Uniprovincial.", provinces: [{ id: "PM", name: "Illes Balears", cap: "Palma" }] },
+            { id: "CN", name: "Canarias", capital: "S.C. Tenerife / Las Palmas (Compartida)", ebauKey: "Ultraperiférica. 2 provincias. 8 islas habitadas.", provinces: [{ id: "GC", name: "Las Palmas", cap: "Las Palmas de G.C." }, { id: "TF", name: "S.C. Tenerife", cap: "Santa Cruz de Tenerife" }] },
+            { id: "CB", name: "Cantabria", capital: "Santander", ebauKey: "Uniprovincial cantábrica.", provinces: [{ id: "S", name: "Cantabria", cap: "Santander" }] },
+            { id: "CLM", name: "Castilla-La Mancha", capital: "Toledo", ebauKey: "Submeseta Sur. 5 provincias.", provinces: [{ id: "AB", name: "Albacete", cap: "Albacete" }, { id: "CR", name: "Ciudad Real", cap: "Ciudad Real" }, { id: "CU", name: "Cuenca", cap: "Cuenca" }, { id: "GU", name: "Guadalajara", cap: "Guadalajara" }, { id: "TO", name: "Toledo", cap: "Toledo" }] },
+            { id: "CL", name: "Castilla y León", capital: "Valladolid (De facto)", ebauKey: "Más extensa de España (9 provincias). Submeseta Norte.", provinces: [{ id: "AV", name: "Ávila", cap: "Ávila" }, { id: "BU", name: "Burgos", cap: "Burgos" }, { id: "LE", name: "León", cap: "León" }, { id: "P", name: "Palencia", cap: "Palencia" }, { id: "SA", name: "Salamanca", cap: "Salamanca" }, { id: "SG", name: "Segovia", cap: "Segovia" }, { id: "SO", name: "Soria", cap: "Soria" }, { id: "VA", name: "Valladolid", cap: "Valladolid" }, { id: "ZA", name: "Zamora", cap: "Zamora" }] },
+            { id: "CT", name: "Cataluña", capital: "Barcelona", ebauKey: "Histórica (art. 151). Lengua cooficial.", provinces: [{ id: "B", name: "Barcelona", cap: "Barcelona" }, { id: "GI", name: "Girona", cap: "Girona" }, { id: "L", name: "Lleida", cap: "Lleida" }, { id: "T", name: "Tarragona", cap: "Tarragona" }] },
+            { id: "VC", name: "Comunidad Valenciana", capital: "Valencia", ebauKey: "Eje mediterráneo. 3 provincias.", provinces: [{ id: "A", name: "Alicante", cap: "Alicante" }, { id: "CS", name: "Castellón", cap: "Castellón de la Plana" }, { id: "V", name: "Valencia", cap: "Valencia" }] },
+            { id: "EX", name: "Extremadura", capital: "Mérida", ebauKey: "Badajoz provincia más grande. Capital Mérida (no provincial).", provinces: [{ id: "BA", name: "Badajoz", cap: "Badajoz" }, { id: "CC", name: "Cáceres", cap: "Cáceres" }] },
+            { id: "GA", name: "Galicia", capital: "Santiago de Compostela", ebauKey: "Histórica (art. 151). Capital Santiago. Poblamiento disperso.", provinces: [{ id: "C", name: "A Coruña", cap: "A Coruña" }, { id: "LU", name: "Lugo", cap: "Lugo" }, { id: "OU", name: "Ourense", cap: "Ourense" }, { id: "PO", name: "Pontevedra", cap: "Pontevedra" }] },
+            { id: "RI", name: "La Rioja", capital: "Logroño", ebauKey: "Uniprovincial en valle del Ebro.", provinces: [{ id: "LO", name: "La Rioja", cap: "Logroño" }] },
+            { id: "MD", name: "Comunidad de Madrid", capital: "Madrid", ebauKey: "Uniprovincial. Capitalidad del Estado. Alta densidad.", provinces: [{ id: "M", name: "Madrid", cap: "Madrid" }] },
+            { id: "MC", name: "Región de Murcia", capital: "Murcia", ebauKey: "Uniprovincial. Asamblea en Cartagena.", provinces: [{ id: "MU", name: "Murcia", cap: "Murcia" }] },
+            { id: "NC", name: "Comunidad Foral de Navarra", capital: "Pamplona", ebauKey: "Régimen Foral (Convenio Económico). Uniprovincial.", provinces: [{ id: "NA", name: "Navarra", cap: "Pamplona" }] },
+            { id: "PV", name: "País Vasco", capital: "Vitoria-Gasteiz", ebauKey: "Histórica. Régimen Foral (Concierto Económico).", provinces: [{ id: "VI", name: "Álava", cap: "Vitoria-Gasteiz" }, { id: "SS", name: "Guipúzcoa", cap: "San Sebastián" }, { id: "BI", name: "Vizcaya", cap: "Bilbao" }] },
+            { id: "CE", name: "Ceuta", capital: "Ceuta", ebauKey: "Ciudad Autónoma (Estatuto 1995).", provinces: [{ id: "CE_P", name: "Ceuta", cap: "Ceuta" }] },
+            { id: "ML", name: "Melilla", capital: "Melilla", ebauKey: "Ciudad Autónoma (Estatuto 1995).", provinces: [{ id: "ML_P", name: "Melilla", cap: "Melilla" }] }
+        ];
+
+        // Advanced SVG Map paths: COORDENADAS CORREGIDAS para acoplarse 100% y tapar "agujeros negros"
+        const PROV_PATHS = [
+            // GA
+            { id: "C", path: "M 130 90 L 180 85 L 185 130 L 135 145 Z", fill: "#38bdf8", lbl: {x: 155, y: 115, t: "A Coruña"} },
+            { id: "LU", path: "M 180 85 L 225 95 L 220 130 L 185 130 Z", fill: "#38bdf8", lbl: {x: 200, y: 115, t: "Lugo"} },
+            { id: "PO", path: "M 135 145 L 185 130 L 175 185 L 130 170 Z", fill: "#38bdf8", lbl: {x: 155, y: 155, t: "Pontevedra"} },
+            { id: "OU", path: "M 185 130 L 220 130 L 215 190 L 175 185 Z", fill: "#38bdf8", lbl: {x: 195, y: 160, t: "Ourense"} },
+            // AS/CB
+            { id: "O", path: "M 225 95 L 320 95 L 315 130 L 220 130 Z", fill: "#818cf8", lbl: {x: 270, y: 110, t: "Asturias"} },
+            { id: "S", path: "M 320 95 L 380 95 L 380 120 L 315 130 Z", fill: "#c084fc", lbl: {x: 345, y: 110, t: "Cantabria"} },
+            // PV
+            { id: "BI", path: "M 380 95 L 415 95 L 410 120 L 380 120 Z", fill: "#f43f5e", lbl: {x: 395, y: 110, t: "Viz"} },
+            { id: "SS", path: "M 415 95 L 445 100 L 435 125 L 410 120 Z", fill: "#f43f5e", lbl: {x: 425, y: 110, t: "Gui"} },
+            { id: "VI", path: "M 380 120 L 410 120 L 435 125 L 420 150 L 375 140 Z", fill: "#f43f5e", lbl: {x: 400, y: 135, t: "Álava"} },
+            // NC/RI
+            { id: "NA", path: "M 445 100 L 505 105 L 490 160 L 420 150 L 435 125 Z", fill: "#fb7185", lbl: {x: 460, y: 130, t: "Navarra"} },
+            { id: "LO", path: "M 375 140 L 420 150 L 415 175 L 370 165 Z", fill: "#e879f9", lbl: {x: 395, y: 158, t: "La Rioja"} },
+            // AR
+            { id: "HU_AR", path: "M 505 105 L 590 115 L 575 180 L 490 160 Z", fill: "#facc15", lbl: {x: 540, y: 140, t: "Huesca"} },
+            { id: "Z", path: "M 490 160 L 575 180 L 550 250 L 470 230 L 415 175 L 420 150 Z", fill: "#facc15", lbl: {x: 500, y: 200, t: "Zaragoza"} },
+            { id: "TE", path: "M 470 230 L 550 250 L 570 320 L 460 300 Z", fill: "#facc15", lbl: {x: 510, y: 275, t: "Teruel"} },
+            // CT
+            { id: "L", path: "M 590 115 L 650 120 L 635 185 L 575 180 Z", fill: "#a3e635", lbl: {x: 610, y: 150, t: "Lleida"} },
+            { id: "GI", path: "M 650 120 L 710 130 L 690 180 L 635 185 Z", fill: "#a3e635", lbl: {x: 670, y: 155, t: "Girona"} },
+            { id: "B", path: "M 635 185 L 690 180 L 670 220 L 610 215 Z", fill: "#a3e635", lbl: {x: 650, y: 200, t: "Bcn"} },
+            { id: "T", path: "M 575 180 L 635 185 L 610 215 L 550 250 Z", fill: "#a3e635", lbl: {x: 590, y: 215, t: "Tarragona"} },
+            // CL
+            { id: "LE", path: "M 220 130 L 315 130 L 300 200 L 215 190 Z", fill: "#f87171", lbl: {x: 260, y: 165, t: "León"} },
+            { id: "P", path: "M 315 130 L 380 120 L 360 205 L 300 200 Z", fill: "#f87171", lbl: {x: 335, y: 165, t: "Palencia"} },
+            { id: "BU", path: "M 380 120 L 375 140 L 370 165 L 415 175 L 380 250 L 360 205 Z", fill: "#f87171", lbl: {x: 380, y: 175, t: "Burgos"} },
+            { id: "SO", path: "M 415 175 L 470 230 L 460 300 L 440 280 L 380 250 Z", fill: "#f87171", lbl: {x: 425, y: 225, t: "Soria"} }, // Corregido: Agujero tapado
+            { id: "ZA", path: "M 215 190 L 300 200 L 285 270 L 190 250 Z", fill: "#f87171", lbl: {x: 245, y: 230, t: "Zamora"} },
+            { id: "VA", path: "M 300 200 L 360 205 L 380 250 L 345 280 L 285 270 Z", fill: "#f87171", lbl: {x: 315, y: 240, t: "Valladolid"} },
+            { id: "SG", path: "M 360 205 L 380 250 L 345 280 Z", fill: "#f87171", lbl: {x: 362, y: 245, t: "Segovia"} },
+            { id: "SA", path: "M 190 250 L 285 270 L 275 340 L 175 320 Z", fill: "#f87171", lbl: {x: 230, y: 295, t: "Salamanca"} },
+            { id: "AV", path: "M 285 270 L 345 280 L 335 340 L 275 340 Z", fill: "#f87171", lbl: {x: 310, y: 310, t: "Ávila"} },
+            // MD
+            { id: "M", path: "M 345 280 L 380 250 L 420 300 L 370 320 L 335 340 Z", fill: "#60a5fa", lbl: {x: 370, y: 295, t: "Madrid"} },
+            // CLM
+            { id: "GU", path: "M 380 250 L 440 280 L 460 300 L 430 350 L 370 320 L 420 300 Z", fill: "#fb923c", lbl: {x: 415, y: 300, t: "Guadalajara"} },
+            { id: "CU", path: "M 460 300 L 570 320 L 530 400 L 430 350 Z", fill: "#fb923c", lbl: {x: 495, y: 345, t: "Cuenca"} },
+            { id: "TO", path: "M 275 340 L 335 340 L 370 320 L 430 350 L 400 420 L 250 390 Z", fill: "#fb923c", lbl: {x: 335, y: 370, t: "Toledo"} },
+            { id: "CR", path: "M 250 390 L 400 420 L 380 500 L 230 470 Z", fill: "#fb923c", lbl: {x: 310, y: 440, t: "Ciudad Real"} },
+            { id: "AB", path: "M 400 420 L 430 350 L 530 400 L 510 480 L 380 500 Z", fill: "#fb923c", lbl: {x: 450, y: 430, t: "Albacete"} },
+            // EX
+            { id: "CC", path: "M 175 320 L 275 340 L 250 390 L 150 370 Z", fill: "#34d399", lbl: {x: 215, y: 355, t: "Cáceres"} },
+            { id: "BA", path: "M 150 370 L 250 390 L 230 470 L 130 440 Z", fill: "#34d399", lbl: {x: 195, y: 420, t: "Badajoz"} },
+            // VC
+            { id: "CS", path: "M 550 250 L 610 215 L 615 285 L 570 320 Z", fill: "#f472b6", lbl: {x: 585, y: 265, t: "Castellón"} },
+            { id: "V", path: "M 570 320 L 615 285 L 600 370 L 530 400 Z", fill: "#f472b6", lbl: {x: 575, y: 340, t: "Valencia"} },
+            { id: "A", path: "M 530 400 L 600 370 L 580 430 L 510 480 Z", fill: "#f472b6", lbl: {x: 550, y: 420, t: "Alicante"} },
+            // MC
+            { id: "MU", path: "M 510 480 L 580 430 L 550 490 L 480 520 Z", fill: "#2dd4bf", lbl: {x: 530, y: 475, t: "Murcia"} },
+            // AN
+            { id: "HU", path: "M 130 440 L 230 470 L 210 540 L 110 510 Z", fill: "#a78bfa", lbl: {x: 170, y: 490, t: "Huelva"} },
+            { id: "SE", path: "M 230 470 L 290 485 L 270 560 L 210 540 Z", fill: "#a78bfa", lbl: {x: 250, y: 515, t: "Sevilla"} },
+            { id: "CO", path: "M 230 470 L 380 500 L 340 540 L 270 560 L 290 485 Z", fill: "#a78bfa", lbl: {x: 300, y: 505, t: "Córdoba"} }, // Corregido: Agujero tapado
+            { id: "JA", path: "M 380 500 L 510 480 L 480 520 L 390 530 L 340 540 Z", fill: "#a78bfa", lbl: {x: 435, y: 510, t: "Jaén"} }, // Corregido: Agujero tapado
+            { id: "CA", path: "M 210 540 L 270 560 L 260 620 L 190 590 Z", fill: "#a78bfa", lbl: {x: 230, y: 580, t: "Cádiz"} },
+            { id: "MA", path: "M 270 560 L 340 540 L 350 610 L 260 620 Z", fill: "#a78bfa", lbl: {x: 305, y: 575, t: "Málaga"} },
+            { id: "GR", path: "M 340 540 L 390 530 L 440 570 L 350 610 Z", fill: "#a78bfa", lbl: {x: 380, y: 565, t: "Granada"} },
+            { id: "AL", path: "M 390 530 L 480 520 L 500 580 L 440 570 Z", fill: "#a78bfa", lbl: {x: 450, y: 550, t: "Almería"} },
+            // IB
+            { id: "PM", path: "M 670 290 L 730 280 L 750 330 L 680 340 Z M 640 350 L 660 345 L 670 370 L 645 375 Z", fill: "#fcd34d", lbl: {x: 710, y: 310, t: "Illes Balears"} },
+            // CN (Inset)
+            { id: "TF", path: "M 30 630 L 60 620 L 70 650 L 40 660 Z M 10 650 L 25 645 L 30 660 L 15 665 Z", fill: "#67e8f9", lbl: {x: 40, y: 645, t: "S.C. Tenerife"} },
+            { id: "GC", path: "M 75 630 L 105 625 L 115 660 L 85 665 Z M 125 620 L 145 615 L 150 640 L 130 645 Z", fill: "#67e8f9", lbl: {x: 95, y: 645, t: "Las Palmas"} },
+            // CE / ML
+            { id: "CE_P", path: "M 240 635 A 5 5 0 1 1 240 634.9 Z", fill: "#ef4444", lbl: {x: 240, y: 645, t: "Ceuta"} },
+            { id: "ML_P", path: "M 380 620 A 5 5 0 1 1 380 619.9 Z", fill: "#ef4444", lbl: {x: 380, y: 630, t: "Melilla"} }
+        ];
+
+        // Ensure lookups are easy
+        const CCAA_BY_PROV = {};
+        const PROV_INFO = {};
+        CCAA_DATA.forEach(ccaa => {
+            ccaa.provinces.forEach(p => {
+                CCAA_BY_PROV[p.id] = ccaa;
+                PROV_INFO[p.id] = p;
+            });
+        });
+
+        // Global State
+        let globalScore = 0;
+        let globalStreak = 0;
+        
+        function updateScore(points) {
+            globalScore += points;
+            document.getElementById('global-score').innerText = globalScore;
+            const el = document.getElementById('global-score');
+            el.classList.remove('text-amber-400');
+            el.classList.add('text-white', 'scale-125');
+            setTimeout(() => el.classList.remove('text-white', 'scale-125', 'text-amber-400'), 200);
+            setTimeout(() => el.classList.add('text-amber-400'), 250);
+        }
+
+        function updateStreak(reset = false) {
+            if(reset) globalStreak = 0;
+            else globalStreak++;
+            document.getElementById('global-streak').innerText = globalStreak;
+            
+            if(globalStreak > 0 && globalStreak % 3 === 0) {
+                 const el = document.getElementById('global-streak');
+                 el.classList.add('animate-bounce');
+                 setTimeout(() => el.classList.remove('animate-bounce'), 1000);
+            }
+        }
+
+        // Navigation
+        function showScreen(screenId) {
+            document.querySelectorAll('.screen').forEach(s => {
+                s.classList.remove('active');
+                setTimeout(() => s.style.display = 'none', 300);
+            });
+            
+            const target = document.getElementById(`screen-${screenId}`);
+            setTimeout(() => {
+                target.style.display = 'flex';
+                void target.offsetWidth; 
+                target.classList.add('active');
+            }, 300);
+
+            const btnHome = document.getElementById('btn-home');
+            if (screenId === 'menu') {
+                btnHome.classList.add('hidden');
+                document.querySelector('header h1').textContent = "Geografía EBAU";
+            } else {
+                btnHome.classList.remove('hidden');
+            }
+
+            // Init specific screens
+            if (screenId === 'explorer') initExplorer();
+            if (screenId === 'match-quiz') startMatchQuiz();
+            if (screenId === 'islands') startIslandQuiz();
+            if (screenId === 'ebau-test') startEbauTest();
+            if (screenId === 'flashcards') initFlashcards();
+        }
+
+        // --- MAP GENERATOR ---
+        function createSVGMap(containerId, interactive = true, onClickCallback = null, customClass = '') {
+            const container = document.getElementById(containerId);
+            container.innerHTML = '';
+            
+            const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+            svg.setAttribute("viewBox", "0 0 800 700");
+            svg.setAttribute("class", "w-full h-full drop-shadow-2xl");
+            svg.style.filter = "drop-shadow(0 10px 15px rgba(0,0,0,0.5))";
+
+            // Francia
+            const francePath = document.createElementNS("http://www.w3.org/2000/svg", "path");
+            francePath.setAttribute("d", "M 415 95 L 445 100 L 505 105 L 590 115 L 650 120 L 710 130 L 760 135 L 760 20 L 400 20 Z");
+            francePath.setAttribute("fill", "#0f172a");
+            francePath.setAttribute("stroke", "#334155");
+            francePath.setAttribute("stroke-width", "2");
+            svg.appendChild(francePath);
+            
+            const franceLabel = document.createElementNS("http://www.w3.org/2000/svg", "text");
+            franceLabel.setAttribute("x", "560");
+            franceLabel.setAttribute("y", "70");
+            franceLabel.setAttribute("class", "fill-slate-700 font-display font-bold text-2xl tracking-widest pointer-events-none");
+            franceLabel.textContent = "FRANCIA";
+            svg.appendChild(franceLabel);
+
+            // Portugal (Perfectamente alineado con la raya fronteriza, sin huecos negros en el oeste)
+            const portugalPath = document.createElementNS("http://www.w3.org/2000/svg", "path");
+            portugalPath.setAttribute("d", "M 30 90 L 130 90 L 135 145 L 130 170 L 175 185 L 215 190 L 190 250 L 175 320 L 150 370 L 130 440 L 110 510 L 30 510 Z");
+            portugalPath.setAttribute("fill", "#0f172a");
+            portugalPath.setAttribute("stroke", "#334155");
+            portugalPath.setAttribute("stroke-width", "2");
+            svg.appendChild(portugalPath);
+
+            const portugalLabel = document.createElementNS("http://www.w3.org/2000/svg", "text");
+            portugalLabel.setAttribute("x", "50");
+            portugalLabel.setAttribute("y", "320");
+            portugalLabel.setAttribute("transform", "rotate(-90, 50, 320)");
+            portugalLabel.setAttribute("class", "fill-slate-700 font-display font-bold text-2xl tracking-widest pointer-events-none");
+            portugalLabel.textContent = "PORTUGAL";
+            svg.appendChild(portugalLabel);
+
+            // Norte de África
+            const africaPath = document.createElementNS("http://www.w3.org/2000/svg", "path");
+            africaPath.setAttribute("d", "M 150 700 L 150 655 L 190 635 L 240 638 L 300 645 L 350 635 L 380 625 L 440 610 L 500 615 L 750 660 L 750 700 Z");
+            africaPath.setAttribute("fill", "#0f172a");
+            africaPath.setAttribute("stroke", "#334155");
+            africaPath.setAttribute("stroke-width", "2");
+            svg.appendChild(africaPath);
+            
+            const africaLabel = document.createElementNS("http://www.w3.org/2000/svg", "text");
+            africaLabel.setAttribute("x", "450");
+            africaLabel.setAttribute("y", "680");
+            africaLabel.setAttribute("class", "fill-slate-700 font-display font-bold text-xl tracking-widest pointer-events-none");
+            africaLabel.textContent = "NORTE DE ÁFRICA";
+            svg.appendChild(africaLabel);
+
+            // Canarias Inset Divider
+            const divider = document.createElementNS("http://www.w3.org/2000/svg", "path");
+            divider.setAttribute("d", "M 10 590 L 160 590 L 185 680 L 10 680 Z");
+            divider.setAttribute("fill", "transparent");
+            divider.setAttribute("stroke", "rgba(255,255,255,0.2)");
+            divider.setAttribute("stroke-dasharray", "5,5");
+            svg.appendChild(divider);
+
+            PROV_PATHS.forEach(prov => {
+                const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
+                g.setAttribute("class", "map-wrapper");
+
+                const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+                path.setAttribute("d", prov.path);
+                path.setAttribute("fill", prov.fill);
+                path.setAttribute("id", `${containerId}-prov-${prov.id}`);
+                path.setAttribute("data-prov", prov.id);
+                path.setAttribute("class", `map-province ${customClass}`);
+                
+                if (interactive) {
+                    path.addEventListener("click", (e) => {
+                        if(onClickCallback) onClickCallback(prov.id, e);
+                    });
+                    
+                    if(containerId === 'explorer-map-container') {
+                        path.addEventListener("mousemove", (e) => showExplorerTooltip(e, prov.id));
+                        path.addEventListener("mouseleave", hideExplorerTooltip);
+                    }
+                }
+
+                g.appendChild(path);
+
+                if (prov.lbl) {
+                    const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+                    text.setAttribute("x", prov.lbl.x);
+                    text.setAttribute("y", prov.lbl.y);
+                    text.setAttribute("class", "floating-label font-display");
+                    text.textContent = prov.lbl.t;
+                    g.appendChild(text);
+                }
+
+                svg.appendChild(g);
+            });
+
+            container.appendChild(svg);
+        }
+
+        // --- EXPLORER LOGIC ---
+        let lastSelectedProv = null;
+        let lastSelectedCCAA = null;
+
+        function initExplorer() {
+            createSVGMap('explorer-map-container', true, handleExplorerClick);
+            
+            const select = document.getElementById('ccaa-filter');
+            if (select.options.length === 1) {
+                CCAA_DATA.forEach(c => {
+                    const opt = document.createElement('option');
+                    opt.value = c.id;
+                    opt.textContent = c.name;
+                    select.appendChild(opt);
+                });
+            }
+        }
+
+        function handleExplorerClick(provId) {
+            lastSelectedProv = provId;
+            const ccaa = CCAA_BY_PROV[provId];
+            lastSelectedCCAA = ccaa;
+            const provInfo = PROV_INFO[provId];
+
+            document.querySelectorAll('#explorer-map-container .map-province').forEach(p => p.classList.remove('active'));
+            document.getElementById(`explorer-map-container-prov-${provId}`).classList.add('active');
+
+            document.getElementById('explorer-info-placeholder').classList.add('hidden');
+            document.getElementById('explorer-info-content').classList.remove('hidden');
+            document.getElementById('explorer-info-content').classList.add('flex');
+
+            document.getElementById('info-title').textContent = ccaa.name;
+            document.getElementById('info-capital').textContent = ccaa.capital;
+            document.getElementById('info-ebau').textContent = ccaa.ebauKey;
+            
+            const provCountSpan = document.getElementById('info-prov-count');
+            provCountSpan.textContent = ccaa.provinces.length;
+
+            const provContainer = document.getElementById('info-provinces');
+            provContainer.innerHTML = '';
+            ccaa.provinces.forEach(p => {
+                const span = document.createElement('span');
+                span.className = `px-3 py-1.5 text-xs font-semibold rounded-lg border ${p.id === provId ? 'bg-amber-500/20 text-amber-400 border-amber-500/50 shadow-[0_0_10px_rgba(245,158,11,0.2)]' : 'bg-slate-800 text-slate-300 border-slate-700'}`;
+                span.innerHTML = `${p.name} <span class="opacity-50 text-[10px] ml-1">(${p.cap})</span>`;
+                provContainer.appendChild(span);
+            });
+        }
+
+        function filterMapByCCAA(ccaaId) {
+            document.querySelectorAll('#explorer-map-container .map-province').forEach(p => {
+                p.style.opacity = '0.2';
+                p.classList.remove('active');
+            });
+            
+            if (ccaaId === 'ALL') {
+                 document.querySelectorAll('#explorer-map-container .map-province').forEach(p => p.style.opacity = '1');
+            } else {
+                const ccaa = CCAA_DATA.find(c => c.id === ccaaId);
+                ccaa.provinces.forEach(p => {
+                    document.getElementById(`explorer-map-container-prov-${p.id}`).style.opacity = '1';
+                });
+                handleExplorerClick(ccaa.provinces[0].id);
+            }
+        }
+
+        function showExplorerTooltip(e, provId) {
+            const tooltip = document.getElementById('explorer-tooltip');
+            const ccaa = CCAA_BY_PROV[provId];
+            const prov = PROV_INFO[provId];
+            
+            document.getElementById('tooltip-prov').textContent = prov.name;
+            document.getElementById('tooltip-ccaa').textContent = ccaa.name;
+
+            tooltip.style.left = `${e.pageX}px`;
+            tooltip.style.top = `${e.pageY - 10}px`;
+            tooltip.style.opacity = '1';
+        }
+
+        function hideExplorerTooltip() {
+            document.getElementById('explorer-tooltip').style.opacity = '0';
+        }
+
+        // --- MAP QUIZ LOGIC ---
+        let quizTarget = null;
+        let mapQuizRound = 1;
+        const MAP_QUIZ_MAX_ROUNDS = 10;
+        let mapQuizCurrentTarget = null;
+
+        function startMapQuiz() {
+            createSVGMap('quiz-map-container', true, handleQuizClick, 'hover:fill-slate-600');
+            document.querySelectorAll('#quiz-map-container .map-province').forEach(p => p.setAttribute('fill', '#1e293b'));
+            mapQuizRound = 1;
+            nextMapQuiz();
+        }
+
+        function startMapQuizWithTarget() {
+             createSVGMap('quiz-map-container', true, handleQuizClick, 'hover:fill-slate-600');
+             document.querySelectorAll('#quiz-map-container .map-province').forEach(p => p.setAttribute('fill', '#1e293b'));
+             mapQuizRound = 1;
+             
+             if(mapQuizCurrentTarget && mapQuizCurrentTarget.prov) {
+                 setupSpecificQuiz(mapQuizCurrentTarget.prov);
+                 mapQuizCurrentTarget = null;
+             } else {
+                 nextMapQuiz();
+             }
+        }
+
+        function setupSpecificQuiz(provId) {
+            document.getElementById('quiz-progress-text').textContent = `${mapQuizRound}/${MAP_QUIZ_MAX_ROUNDS}`;
+            const prov = PROV_INFO[provId];
+            const ccaa = CCAA_BY_PROV[provId];
+            quizTarget = provId;
+
+            document.getElementById('quiz-target-name').textContent = prov.name;
+            document.getElementById('quiz-hint').textContent = `Pertenece a la CCAA: ${ccaa.name}`;
+            document.getElementById('quiz-hint').style.opacity = '0';
+            
+            resetQuizUI();
+        }
+
+        function nextMapQuiz() {
+            if(mapQuizRound > MAP_QUIZ_MAX_ROUNDS) {
+                alert(`¡Reto completado! Puntuación global: ${globalScore}`);
+                showScreen('menu');
+                return;
+            }
+            
+            document.getElementById('quiz-progress-text').textContent = `${mapQuizRound}/${MAP_QUIZ_MAX_ROUNDS}`;
+            
+            const randomCcaa = CCAA_DATA[Math.floor(Math.random() * CCAA_DATA.length)];
+            const randomProv = randomCcaa.provinces[Math.floor(Math.random() * randomCcaa.provinces.length)];
+            quizTarget = randomProv.id;
+
+            document.getElementById('quiz-target-name').textContent = randomProv.name;
+            document.getElementById('quiz-hint').textContent = `Pertenece a la CCAA: ${randomCcaa.name}`;
+            document.getElementById('quiz-hint').style.opacity = '0';
+            
+            resetQuizUI();
+        }
+
+        function resetQuizUI() {
+            document.querySelectorAll('#quiz-map-container .map-province').forEach(p => {
+                p.classList.remove('correct', 'wrong', 'active');
+                p.style.pointerEvents = 'auto';
+                p.setAttribute('fill', '#1e293b');
+            });
+            document.getElementById('quiz-feedback-box').classList.add('hidden');
+            document.getElementById('quiz-feedback-box').classList.remove('flex');
+            document.getElementById('quiz-next-btn').classList.add('hidden');
+        }
+
+        function handleQuizClick(provId, e) {
+            const clickedEl = document.getElementById(`quiz-map-container-prov-${provId}`);
+            
+            const feedbackBox = document.getElementById('quiz-feedback-box');
+            const feedbackIcon = document.getElementById('quiz-feedback-icon');
+            const feedbackTitle = document.getElementById('quiz-feedback-title');
+            const feedbackText = document.getElementById('quiz-feedback-text');
+
+            feedbackBox.classList.remove('hidden');
+            feedbackBox.classList.add('flex', 'bg-slate-800/80');
+
+            if (provId === quizTarget) {
+                clickedEl.classList.add('correct');
+                updateScore(100);
+                updateStreak();
+                
+                feedbackIcon.innerHTML = '<i class="fa-solid fa-check"></i>';
+                feedbackIcon.className = 'w-16 h-16 rounded-full flex items-center justify-center text-3xl mb-4 text-white bg-green-500 shadow-[0_0_20px_rgba(34,197,94,0.5)]';
+                feedbackTitle.textContent = '¡Correcto!';
+                feedbackTitle.className = 'text-xl font-bold text-green-400 mb-2';
+                feedbackText.textContent = `Has localizado ${PROV_INFO[provId].name} a la primera.`;
+                
+                document.querySelectorAll('#quiz-map-container .map-province').forEach(p => p.style.pointerEvents = 'none');
+                
+                setTimeout(() => {
+                    mapQuizRound++;
+                    document.getElementById('quiz-next-btn').classList.remove('hidden');
+                }, 500);
+
+            } else {
+                clickedEl.classList.add('wrong');
+                updateStreak(true);
+                
+                feedbackIcon.innerHTML = '<i class="fa-solid fa-xmark"></i>';
+                feedbackIcon.className = 'w-16 h-16 rounded-full flex items-center justify-center text-3xl mb-4 text-white bg-red-500 shadow-[0_0_20px_rgba(239,68,68,0.5)]';
+                feedbackTitle.textContent = '¡Fallo!';
+                feedbackTitle.className = 'text-xl font-bold text-red-400 mb-2';
+                feedbackText.textContent = `Esa es la provincia de ${PROV_INFO[provId].name}. Busca ${PROV_INFO[quizTarget].name}.`;
+                
+                setTimeout(() => clickedEl.classList.remove('wrong'), 1000);
+            }
+        }
+
+        // --- MATCH QUIZ LOGIC ---
+        let matchQuestions = [];
+        let currentMatchQ = 0;
+
+        function startMatchQuiz() {
+            currentMatchQ = 0;
+            matchQuestions = generateMatchQuestions(10);
+            updateMatchUI();
+        }
+
+        function generateMatchQuestions(num) {
+            let qs = [];
+            for(let i=0; i<num; i++) {
+                const type = Math.random() > 0.5 ? 'capital' : 'ccaa';
+                const ccaa = CCAA_DATA[Math.floor(Math.random() * CCAA_DATA.length)];
+                const prov = ccaa.provinces[Math.floor(Math.random() * ccaa.provinces.length)];
+                
+                let q = { type, ccaa, prov };
+                
+                let options = [];
+                if (type === 'capital') {
+                    q.text = `¿Cuál es la capital de la provincia de ${prov.name}?`;
+                    options.push({ text: prov.cap, correct: true });
+                    while(options.length < 4) {
+                        let wrongCCAA = CCAA_DATA[Math.floor(Math.random() * CCAA_DATA.length)];
+                        let wrongProv = wrongCCAA.provinces[Math.floor(Math.random() * wrongCCAA.provinces.length)];
+                        if(!options.find(o => o.text === wrongProv.cap)) {
+                            options.push({ text: wrongProv.cap, correct: false });
+                        }
+                    }
+                } else {
+                    q.text = `¿A qué Comunidad Autónoma pertenece la provincia de ${prov.name}?`;
+                    options.push({ text: ccaa.name, correct: true });
+                    while(options.length < 4) {
+                        let wrongCCAA = CCAA_DATA[Math.floor(Math.random() * CCAA_DATA.length)];
+                        if(!options.find(o => o.text === wrongCCAA.name)) {
+                            options.push({ text: wrongCCAA.name, correct: false });
+                        }
+                    }
+                }
+                
+                q.options = options.sort(() => Math.random() - 0.5);
+                qs.push(q);
+            }
+            return qs;
+        }
+
+        function updateMatchUI() {
+            if(currentMatchQ >= matchQuestions.length) {
+                alert(`¡Test completado! Puntuación global: ${globalScore}`);
+                showScreen('menu');
+                return;
+            }
+
+            const q = matchQuestions[currentMatchQ];
+            document.getElementById('match-type-label').textContent = q.type === 'capital' ? 'Capital de Provincia' : 'Pertenencia a CCAA';
+            document.getElementById('match-question').textContent = q.text;
+            
+            const progress = ((currentMatchQ) / matchQuestions.length) * 100;
+            document.getElementById('match-progress-bar').style.width = `${progress}%`;
+
+            const optionsContainer = document.getElementById('match-options');
+            optionsContainer.innerHTML = '';
+            
+            q.options.forEach((opt, index) => {
+                const btn = document.createElement('button');
+                btn.className = 'glass p-6 rounded-2xl text-lg font-bold text-slate-200 hover:bg-slate-800 hover:border-emerald-500/50 transition border border-transparent text-left relative overflow-hidden group';
+                btn.innerHTML = `
+                    <div class="absolute inset-0 bg-emerald-500/10 translate-y-full group-hover:translate-y-0 transition-transform duration-300"></div>
+                    <span class="relative z-10 flex items-center gap-3">
+                        <span class="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center text-sm text-emerald-400 font-mono">${String.fromCharCode(65 + index)}</span>
+                        ${opt.text}
+                    </span>
+                `;
+                btn.onclick = () => handleMatchAnswer(btn, opt.correct);
+                optionsContainer.appendChild(btn);
+            });
+        }
+
+        function handleMatchAnswer(btn, isCorrect) {
+            Array.from(document.getElementById('match-options').children).forEach(b => b.style.pointerEvents = 'none');
+            
+            if(isCorrect) {
+                btn.classList.remove('hover:border-emerald-500/50', 'hover:bg-slate-800');
+                btn.classList.add('bg-emerald-600', 'border-emerald-400', 'text-white', 'shadow-[0_0_20px_rgba(5,150,105,0.4)]');
+                updateScore(50);
+                updateStreak();
+            } else {
+                btn.classList.remove('hover:border-emerald-500/50', 'hover:bg-slate-800');
+                btn.classList.add('bg-red-600/80', 'border-red-400', 'text-white');
+                updateStreak(true);
+                Array.from(document.getElementById('match-options').children).forEach((b, i) => {
+                    if(matchQuestions[currentMatchQ].options[i].correct) {
+                        b.classList.add('border-emerald-500', 'text-emerald-400');
+                    }
+                });
+            }
+
+            setTimeout(() => {
+                currentMatchQ++;
+                updateMatchUI();
+            }, 1200);
+        }
+
+        // --- ISLANDS QUIZ ---
+        let islandQIndex = 0;
+        const ISLAND_QUESTIONS = [
+            { q: "¿A qué archipiélago pertenecen las islas Gimnesias?", options: [{t:"Illes Balears", c:true}, {t:"Canarias", c:false}, {t:"Ninguna", c:false}, {t:"Azores", c:false}] },
+            { q: "¿Qué islas forman las Pitiusas?", options: [{t:"Ibiza y Formentera", c:true}, {t:"Mallorca y Menorca", c:false}, {t:"Gran Canaria y Tenerife", c:false}, {t:"Lanzarote y Fuerteventura", c:false}] },
+            { q: "¿Cuál es la capital de la CCAA de Canarias?", options: [{t:"Compartida (S.C. Tenerife y Las Palmas)", c:true}, {t:"Santa Cruz de Tenerife", c:false}, {t:"Las Palmas de Gran Canaria", c:false}, {t:"La Laguna", c:false}] },
+            { q: "¿En qué provincia canaria se encuentra la isla de El Hierro?", options: [{t:"Santa Cruz de Tenerife", c:true}, {t:"Las Palmas", c:false}, {t:"Hierro (es uniprovincial)", c:false}, {t:"No es una isla", c:false}] },
+            { q: "¿Cuántas provincias forman la CCAA de Illes Balears?", options: [{t:"Una (Uniprovincial)", c:true}, {t:"Dos (Mallorca y Menorca)", c:false}, {t:"Tres", c:false}, {t:"Cuatro", c:false}] }
+        ];
+
+        function startIslandQuiz() {
+            islandQIndex = 0;
+            ISLAND_QUESTIONS.sort(() => Math.random() - 0.5);
+            ISLAND_QUESTIONS.forEach(q => q.options.sort(() => Math.random() - 0.5));
+            loadIslandQ();
+        }
+
+        function loadIslandQ() {
+            if(islandQIndex >= ISLAND_QUESTIONS.length) {
+                alert(`¡Sección completada! Score: ${globalScore}`);
+                showScreen('menu');
+                return;
+            }
+            
+            const q = ISLAND_QUESTIONS[islandQIndex];
+            document.getElementById('island-q-text').textContent = q.q;
+            
+            const container = document.getElementById('island-q-options');
+            container.innerHTML = '';
+            
+            q.options.forEach(opt => {
+                const btn = document.createElement('button');
+                btn.className = 'glass py-4 px-6 rounded-xl font-semibold text-slate-200 hover:bg-slate-800 hover:scale-105 transition duration-200 border border-transparent text-lg';
+                btn.textContent = opt.t;
+                btn.onclick = () => handleIslandA(btn, opt.c);
+                container.appendChild(btn);
+            });
+        }
+
+        function handleIslandA(btn, isCorrect) {
+             Array.from(document.getElementById('island-q-options').children).forEach(b => b.style.pointerEvents = 'none');
+             if(isCorrect) {
+                 btn.classList.add('bg-cyan-600', 'border-cyan-400', 'text-white', 'shadow-lg', 'shadow-cyan-500/50');
+                 updateScore(60);
+                 updateStreak();
+             } else {
+                 btn.classList.add('bg-red-600/80', 'border-red-400');
+                 updateStreak(true);
+             }
+             setTimeout(() => {
+                 islandQIndex++;
+                 loadIslandQ();
+             }, 1000);
+        }
+
+        // --- EBAU TEST ---
+        let ebauIndex = 0;
+        const EBAU_QUESTIONS_RAW = [
+            { 
+                q: "¿Qué Comunidades Autónomas accedieron a la autonomía por la 'vía rápida' del artículo 151 de la Constitución gracias a la Disposición Transitoria 2ª (por haber plebiscitado estatuto durante la II República)?", 
+                exp: "La Disposición Transitoria 2ª permitió a Cataluña, País Vasco y Galicia acceder directamente por el art. 151 al máximo nivel competencial sin tener que cumplir los estrictos requisitos de la iniciativa de dicho artículo.",
+                options: [
+                    {t:"Cataluña, País Vasco y Galicia", c:true},
+                    {t:"Andalucía, Cataluña y País Vasco", c:false},
+                    {t:"Madrid, Cataluña y País Vasco", c:false},
+                    {t:"Galicia, Navarra y País Vasco", c:false}
+                ]
+            },
+            { 
+                q: "¿Qué única Comunidad Autónoma recorrió íntegramente el complejo procedimiento del artículo 151 para acceder a la autonomía (vía rápida), incluyendo el referéndum del 28 de febrero de 1980?", 
+                exp: "Andalucía es el único caso en la historia constitucional española que accedió a la autonomía recorriendo todo el proceso del art. 151, lo que marcó un hito en la descentralización del Estado.",
+                options: [
+                    {t:"Andalucía", c:true},
+                    {t:"Comunidad Valenciana", c:false},
+                    {t:"Canarias", c:false},
+                    {t:"Aragón", c:false}
+                ]
+            },
+            { 
+                q: "En el contexto de los ejes de desarrollo económico de España (a menudo preguntado en EBAU), ¿qué tres provincias conforman el vital 'Eje Mediterráneo' en la Comunidad Valenciana?", 
+                exp: "El eje mediterráneo, crucial para el transporte y la economía, atraviesa la Comunidad Valenciana por sus tres provincias costeras de norte a sur.",
+                options: [
+                    {t:"Castellón, Valencia y Alicante", c:true},
+                    {t:"Tarragona, Valencia y Murcia", c:false},
+                    {t:"Valencia, Alicante y Murcia", c:false},
+                    {t:"Castellón, Valencia y Albacete", c:false}
+                ]
+            },
+            { 
+                q: "Dentro de la geografía política española, ¿cuál de las siguientes es una Comunidad Autónoma UNIPROVINCIAL situada en la cornisa cantábrica?", 
+                exp: "En el norte peninsular, Asturias y Cantabria son comunidades autónomas formadas por una sola provincia. País Vasco y Galicia son pluriprovinciales.",
+                options: [
+                    {t:"Cantabria", c:true},
+                    {t:"País Vasco", c:false},
+                    {t:"Galicia", c:false},
+                    {t:"Navarra", c:false}
+                ]
+            },
+            {
+                q: "La Unión Europea reconoce un estatus geográfico y socioeconómico especial a ciertos territorios alejados del continente. ¿Qué Comunidad Autónoma española tiene la condición de Región Ultraperiférica (RUP)?",
+                exp: "Por su lejanía geográfica de Europa, Canarias tiene el estatus de Región Ultraperiférica, lo que le otorga un tratamiento fiscal y económico diferenciado dentro de la UE.",
+                options: [
+                    {t:"Canarias", c:true},
+                    {t:"Illes Balears", c:false},
+                    {t:"Ceuta y Melilla", c:false},
+                    {t:"Andalucía", c:false}
+                ]
+            },
+            {
+                q: "¿Qué artículo de la Constitución Española de 1978 establece el marco para las competencias exclusivas del Estado frente a las CCAA?",
+                exp: "El artículo 149 reserva 32 materias de competencia exclusiva para el Estado, estableciendo el marco competencial básico de España.",
+                options: [
+                    {t:"Artículo 149", c:true},
+                    {t:"Artículo 143", c:false},
+                    {t:"Artículo 155", c:false},
+                    {t:"Artículo 2", c:false}
+                ]
+            }
+        ];
+        
+        let EBAU_QUESTIONS = [];
+
+        function startEbauTest() {
+            ebauIndex = 0;
+            EBAU_QUESTIONS = [...EBAU_QUESTIONS_RAW].sort(() => Math.random() - 0.5);
+            EBAU_QUESTIONS.forEach(q => {
+                q.options.sort(() => Math.random() - 0.5);
+            });
+            loadEbauQ();
+        }
+
+        function loadEbauQ() {
+            if(ebauIndex >= EBAU_QUESTIONS.length) {
+                alert(`¡Test EBAU finalizado! Puntuación global: ${globalScore}`);
+                showScreen('menu');
+                return;
+            }
+            
+            const q = EBAU_QUESTIONS[ebauIndex];
+            document.getElementById('ebau-counter').textContent = `Pregunta ${ebauIndex + 1}/${EBAU_QUESTIONS.length}`;
+            document.getElementById('ebau-q-text').textContent = q.q;
+            
+            document.getElementById('ebau-explanation').classList.add('hidden');
+            document.getElementById('ebau-next-btn').classList.add('hidden');
+            
+            const container = document.getElementById('ebau-options');
+            container.innerHTML = '';
+            
+            let displayOptions = [...q.options];
+            const correctIndex = displayOptions.findIndex(o => o.c === true);
+            if (correctIndex !== 0) {
+                const temp = displayOptions[0];
+                displayOptions[0] = displayOptions[correctIndex];
+                displayOptions[correctIndex] = temp;
+            }
+
+            displayOptions.forEach((opt, index) => {
+                const letter = String.fromCharCode(65 + index);
+                const btn = document.createElement('button');
+                btn.className = 'w-full glass p-4 rounded-xl text-left hover:bg-slate-800 transition flex items-start gap-4 border border-transparent group';
+                btn.innerHTML = `
+                    <span class="shrink-0 w-8 h-8 rounded-lg bg-indigo-500/20 text-indigo-400 flex items-center justify-center font-bold font-mono group-hover:bg-indigo-500 group-hover:text-white transition-colors">
+                        ${letter}
+                    </span>
+                    <span class="text-slate-200 mt-1 font-medium">${opt.t}</span>
+                `;
+                btn.onclick = () => handleEbauA(btn, opt.c, displayOptions);
+                container.appendChild(btn);
+            });
+        }
+
+        function handleEbauA(btn, isCorrect, options) {
+             const btns = Array.from(document.getElementById('ebau-options').children);
+             btns.forEach(b => b.style.pointerEvents = 'none');
+             
+             if(isCorrect) {
+                 btn.classList.add('bg-indigo-600/40', 'border-indigo-400', 'shadow-[0_0_15px_rgba(99,102,241,0.3)]');
+                 updateScore(150);
+                 updateStreak();
+             } else {
+                 btn.classList.add('bg-rose-900/40', 'border-rose-500');
+                 updateStreak(true);
+                 options.forEach((o, i) => {
+                     if(o.c) btns[i].classList.add('border-indigo-400', 'text-indigo-300');
+                 });
+             }
+             
+             const exp = document.getElementById('ebau-explanation');
+             document.getElementById('ebau-exp-text').textContent = EBAU_QUESTIONS[ebauIndex].exp;
+             exp.classList.remove('hidden');
+             
+             document.getElementById('ebau-next-btn').classList.remove('hidden');
+        }
+        
+        function nextEbauQ() {
+            ebauIndex++;
+            loadEbauQ();
+        }
+
+        // --- FLASHCARDS LOGIC ---
+        let fcData = [];
+        let fcIndex = 0;
+
+        function initFlashcards() {
+            fcData = [...CCAA_DATA];
+            fcIndex = 0;
+            renderFc();
+        }
+
+        function renderFc() {
+            const cardEl = document.getElementById('flashcard-element');
+            cardEl.classList.remove('flipped');
+            
+            setTimeout(() => {
+                const c = fcData[fcIndex];
+                document.getElementById('fc-counter').textContent = `${fcIndex + 1} / ${fcData.length}`;
+                
+                document.getElementById('fc-front-title').textContent = c.name;
+                document.getElementById('fc-back-title').textContent = c.name;
+                document.getElementById('fc-back-capital').textContent = c.capital;
+                document.getElementById('fc-back-ebau').textContent = c.ebauKey;
+                
+                const provNames = c.provinces.map(p => p.name).join(', ');
+                document.getElementById('fc-back-provs').textContent = provNames;
+            }, 150);
+        }
+
+        function nextFc() {
+            fcIndex = (fcIndex + 1) % fcData.length;
+            renderFc();
+        }
+
+        function prevFc() {
+            fcIndex = (fcIndex - 1 + fcData.length) % fcData.length;
+            renderFc();
+        }
+
+        function shuffleFc() {
+            fcData.sort(() => Math.random() - 0.5);
+            fcIndex = 0;
+            renderFc();
+        }
+    </script>
+</body>
+</html>
